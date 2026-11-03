@@ -32,6 +32,35 @@ test('parseArgs accepts mcp command', () => {
   assert.equal(options.command, 'mcp');
 });
 
+test('parseArgs parses inject command with provider, email, and cookies', () => {
+  const options = parseArgs([
+    'inject',
+    '--provider',
+    'gemini',
+    '--email',
+    'user@example.com',
+    '--cookies',
+    'foo=bar',
+  ]);
+
+  assert.equal(options.command, 'inject');
+  assert.equal(options.provider, 'gemini');
+  assert.equal(options.email, 'user@example.com');
+  assert.equal(options.cookies, 'foo=bar');
+});
+
+test('parseArgs rejects inject without required arguments', () => {
+  assert.throws(() => parseArgs(['inject', '--provider', 'gemini']), /inject requires --email/);
+  assert.throws(
+    () => parseArgs(['inject', '--email', 'user@example.com']),
+    /inject requires --provider/,
+  );
+  assert.throws(
+    () => parseArgs(['inject', '--provider', 'gemini', '--email', 'user@example.com']),
+    /inject requires --cookies/,
+  );
+});
+
 test('parseArgs rejects options that do not belong to the command', () => {
   assert.throws(() => parseArgs(['list', '--since-days', '7']), /list supports only --json/);
   assert.throws(() => parseArgs(['mcp', '--json']), /mcp does not accept options/);

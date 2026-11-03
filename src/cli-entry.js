@@ -58,7 +58,12 @@ async function main(argv, deps = {}) {
     return 0;
   }
 
-  if (options.command === 'list' || options.command === 'sync') {
+  if (
+    options.command === 'list' ||
+    options.command === 'sync' ||
+    options.command === 'inject' ||
+    options.command === 'login'
+  ) {
     const { command, ...delegatedArgs } = options;
     return runViaDelegationImpl(command, delegatedArgs);
   }

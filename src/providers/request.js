@@ -334,10 +334,12 @@ async function makeRequest(url, ses, extraHeaders, options = {}) {
 }
 
 async function makeRawRequest(url, ses, options = {}) {
+  const cookieUrls = options.cookieUrls || [url];
   const response = await sendRequest({
     url,
     ses,
     kind: 'raw',
+    cookieUrls,
     signal: options.signal,
     timeoutMs: options.timeoutMs,
     buildHeaders: (cookieHeader) => (cookieHeader ? { Cookie: cookieHeader } : {}),

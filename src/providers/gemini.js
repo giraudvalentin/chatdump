@@ -4,7 +4,6 @@ const { conversationFilename, conversationMarkdown } = require('./markdown');
 const { sleep } = require('../sleep');
 
 const BASE = 'https://gemini.google.com';
-const BATCH_EXEC = `${BASE}/_/BardChatUi/data/batchexecute`;
 const LIST_PAGE_SIZE = 13;
 const MAX_LIST_PAGES = 100;
 const LIST_PAGE_DELAY_MS = 300;
@@ -55,8 +54,13 @@ const provider = {
   },
 
   async fetchConversations(ses, timestamps, onProgress, onConversation, options = {}) {
+    const accountEmail =
+      options.account?.email ||
+      (options.accountId ? options.accountId.replace(/^gemini:/, '') : '');
+    const upath = await resolveAccountPath(ses, accountEmail, options.signal);
+
     // Step 1: Get tokens from the app page
-    const tokens = await getPageTokens(ses, options.signal);
+    const tokens = await getPageTokens(ses, options.signal, upath);
     if (!tokens.at) {
       throw new Error('AUTH_EXPIRED');
     }
@@ -175,21 +179,47 @@ function isoFromTimestamp(ts) {
   return ts ? new Date(ts).toISOString() : '';
 }
 
-async function getPageTokens(ses, signal) {
+async function resolveAccountPath(ses, email, signal) {
+  if (!email) return '';
+  for (let u = 0; u <= 5; u++) {
+    const upath = u === 0 ? '' : `/u/${u}`;
+    try {
+      const html = await makeRawRequest(`${BASE}${upath}/app`, ses, {
+        signal,
+        cookieUrls: [BASE, 'https://google.com'],
+      });
+      if (html?.includes(email)) {
+        return upath;
+      }
+    } catch {}
+  }
+  return '';
+}
+
+async function getPageTokens(ses, signal, upath = '') {
   try {
-    const html = await makeRawRequest(`${BASE}/app`, ses, { signal });
-    const at = (html.match(/"SNlM0e":"([^"]+)"/) || [])[1] || '';
+    const html = await makeRawRequest(`${BASE}${upath}/app`, ses, {
+      signal,
+      cookieUrls: [BASE, 'https://google.com'],
+    });
+    const at =
+      (html.match(/"SNlM0e":"([^"]+)"/) || [])[1] ||
+      (html.match(/"[a-zA-Z0-9_]+":"(AFWLbD[^"]+)"/) || [])[1] ||
+      (html.match(/"thykhd":"([^"]+)"/) || [])[1] ||
+      '';
     const bl = (html.match(/"cfb2h":"([^"]+)"/) || [])[1] || '';
     const sid = (html.match(/"FdrFJe":"([^"]+)"/) || [])[1] || '';
-    return { at, bl, sid };
+    return { at, bl, sid, upath };
   } catch (e) {
     if (shouldRethrowProviderError(e, signal)) throw e;
     console.error('[gemini] Failed to get page tokens:', e.message);
-    return { at: '', bl: '', sid: '' };
+    return { at: '', bl: '', sid: '', upath };
   }
 }
 
 async function batchExecute(ses, tokens, rpcId, payload, signal) {
+  const upath = tokens.upath || '';
+
   // Build form body
   const formBody = new URLSearchParams();
   formBody.set('f.req', JSON.stringify([[[rpcId, payload, null, 'generic']]]));
@@ -198,15 +228,17 @@ async function batchExecute(ses, tokens, rpcId, payload, signal) {
   // Build query string
   const qs = new URLSearchParams({
     rpcids: rpcId,
-    'source-path': '/app',
+    'source-path': `${upath || ''}/app`,
     bl: tokens.bl,
-    'f.sid': tokens.sid,
     hl: 'en',
     _reqid: String(Math.floor(Math.random() * 1000000)),
     rt: 'c',
   });
+  if (tokens.sid) {
+    qs.set('f.sid', tokens.sid);
+  }
 
-  const url = `${BATCH_EXEC}?${qs.toString()}`;
+  const url = `${BASE}${upath}/_/BardChatUi/data/batchexecute?${qs.toString()}`;
 
   return withRetry(
     () =>
@@ -219,6 +251,8 @@ async function batchExecute(ses, tokens, rpcId, payload, signal) {
           Origin: BASE,
           Referer: `${BASE}/`,
           'X-Same-Domain': '1',
+          'User-Agent':
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
         },
         [BASE, 'https://google.com'],
         { signal },
@@ -455,6 +489,8 @@ provider._test = {
   parseFrames,
   parseConversationListResult,
   parseConversationMessages,
+  resolveAccountPath,
+  getPageTokens,
 };
 
 module.exports = provider;

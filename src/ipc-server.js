@@ -241,6 +241,100 @@ async function handleMcpSync(args, send, { store, scheduler, providers }) {
   return 0;
 }
 
+async function handleInject(args, send, { store, providers, session: sessionModule }) {
+  const electronSession = sessionModule || require('electron').session;
+  const { provider: providerName, email } = args;
+  let cookies = args.cookies;
+
+  if (typeof cookies === 'string') {
+    try {
+      cookies = JSON.parse(cookies);
+    } catch {
+      // Parse key=value; key=value format
+      const parsed = {};
+      for (const pair of cookies.split(';')) {
+        const idx = pair.indexOf('=');
+        if (idx > -1) {
+          const k = pair.slice(0, idx).trim();
+          const v = pair.slice(idx + 1).trim();
+          if (k) parsed[k] = v;
+        }
+      }
+      cookies = parsed;
+    }
+  }
+
+  if (Array.isArray(cookies)) {
+    const parsed = {};
+    for (const c of cookies) {
+      if (c?.name && c.value) {
+        parsed[c.name] = c.value;
+      }
+    }
+    cookies = parsed;
+  }
+
+  const prov = providers.getProvider(providerName);
+  if (!prov) throw new Error(`Unknown provider: ${providerName}`);
+  if (!email) throw new Error('Missing --email');
+  if (!cookies || typeof cookies !== 'object') throw new Error('Missing cookies');
+
+  const accountId = `${prov.name}:${email}`;
+  const ses = electronSession.fromPartition(`persist:${accountId}`);
+  const baseUrl = prov.baseUrl;
+  const exp = Math.floor(Date.now() / 1000) + 365 * 86400;
+
+  for (const [name, value] of Object.entries(cookies)) {
+    if (!value) continue;
+    const isHostOnly = name.startsWith('__Host-');
+
+    try {
+      await ses.cookies.set({
+        url: baseUrl,
+        name,
+        value: String(value),
+        path: '/',
+        secure: true,
+        expirationDate: exp,
+      });
+    } catch (e) {
+      console.error(`[inject] Cookie ${name} on ${baseUrl} error: ${e.message}`);
+    }
+
+    if (prov.name === 'gemini' && !isHostOnly) {
+      try {
+        await ses.cookies.set({
+          url: 'https://google.com/',
+          name,
+          value: String(value),
+          domain: '.google.com',
+          path: '/',
+          secure: true,
+          expirationDate: exp,
+        });
+      } catch (e) {
+        console.error(`[inject] Cookie ${name} on google.com error: ${e.message}`);
+      }
+    }
+  }
+
+  if (typeof ses.cookies.flushStore === 'function') {
+    await ses.cookies.flushStore();
+  }
+
+  store.upsertAccount({
+    id: accountId,
+    provider: prov.name,
+    email,
+    name: `${prov.displayName} (${email})`,
+    status: 'ok',
+    autoSync: true,
+  });
+
+  send({ type: 'stdout', text: `Injected session for ${accountId}\n` });
+  return 0;
+}
+
 // Dispatch a decoded `request` message, invoking `send(partial)` zero or
 // more times (each call is stamped with the request's `id` by the caller)
 // and resolving with the exit code once the command is done.
@@ -251,6 +345,9 @@ async function dispatch(request, send, deps = defaultDeps()) {
   }
   if (cmd === 'sync') {
     return handleSync(args, send, deps);
+  }
+  if (cmd === 'inject') {
+    return handleInject(args, send, deps);
   }
   if (cmd === 'mcp.accounts') {
     return handleMcpAccounts(args, send, deps);
@@ -352,6 +449,7 @@ module.exports = {
     formatAccountBlock,
     handleList,
     handleSync,
+    handleInject,
     handleMcpAccounts,
     handleMcpAsk,
     handleMcpConversation,

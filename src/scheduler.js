@@ -123,7 +123,7 @@ async function syncAccount(accountId, onStatus, options = {}) {
   abortControllers.set(accountId, abortController);
 
   // Default sinceDays from account.syncWindowDays for openai sync mode.
-  const effectiveOptions = { ...options, signal: abortController.signal };
+  const effectiveOptions = { ...options, signal: abortController.signal, account, accountId };
   if (
     account.provider === 'openai' &&
     (!effectiveOptions.mode || effectiveOptions.mode === 'sync') &&

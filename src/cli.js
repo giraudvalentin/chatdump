@@ -4,7 +4,7 @@
 // for `list`/`sync`/`fetch`/`mcp.*` lives in src/ipc-server.js, which runs
 // inside the GUI Electron process and is reached over the IPC socket (see
 // src/ipc-client.js).
-const COMMANDS = new Set(['help', 'list', 'sync', 'fetch', 'mcp']);
+const COMMANDS = new Set(['help', 'list', 'sync', 'fetch', 'mcp', 'inject', 'login']);
 
 function printHelp(stream = process.stdout) {
   stream.write(`chatdump CLI
@@ -13,6 +13,7 @@ Usage:
   chatdump list [--json]
   chatdump sync [--account <id>] [--provider <name>] [--since-days <days>] [--full-sync <created_at|last_message_at>] [--json]
   chatdump fetch <url-or-id> [--account <id>] [--provider <name>] [--json]
+  chatdump inject --provider <name> --email <email> --cookies <json-or-string>
   chatdump mcp
 
 Examples:
@@ -42,6 +43,8 @@ function parseArgs(args) {
     command: args[0] || 'help',
     accountIds: [],
     provider: '',
+    email: '',
+    cookies: '',
     json: false,
     sinceDays: undefined,
     mode: undefined,
@@ -68,6 +71,18 @@ function parseArgs(args) {
       options.provider = value;
     } else if (arg.startsWith('--provider=')) {
       options.provider = arg.slice('--provider='.length);
+    } else if (arg === '--email') {
+      const value = args[++i];
+      if (!value) throw new CliUsageError('--email requires an email address');
+      options.email = value;
+    } else if (arg.startsWith('--email=')) {
+      options.email = arg.slice('--email='.length);
+    } else if (arg === '--cookies') {
+      const value = args[++i];
+      if (!value) throw new CliUsageError('--cookies requires cookies string or JSON');
+      options.cookies = value;
+    } else if (arg.startsWith('--cookies=')) {
+      options.cookies = arg.slice('--cookies='.length);
     } else if (arg === '--since-days') {
       options.sinceDays = parsePositiveInteger(args[++i], '--since-days');
     } else if (arg.startsWith('--since-days=')) {
@@ -118,6 +133,14 @@ function validateCommandOptions(options) {
   }
   if (options.command === 'mcp' && (options.json || hasSelection || hasSyncOptions)) {
     throw new CliUsageError('mcp does not accept options');
+  }
+  if (options.command === 'inject') {
+    if (!options.provider) throw new CliUsageError('inject requires --provider');
+    if (!options.email) throw new CliUsageError('inject requires --email');
+    if (!options.cookies) throw new CliUsageError('inject requires --cookies');
+    if (hasSyncOptions || options.conversationId || options.accountIds.length > 0) {
+      throw new CliUsageError('inject supports only --provider, --email, --cookies, and --json');
+    }
   }
   if (options.command === 'sync' && options.conversationId) {
     throw new CliUsageError('sync does not accept a conversation reference');

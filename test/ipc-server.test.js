@@ -7,6 +7,7 @@ const {
     selectAccounts,
     handleList,
     handleSync,
+    handleInject,
     handleMcpAccounts,
     handleMcpAsk,
     handleMcpConversation,
@@ -313,4 +314,42 @@ test('dispatch routes mcp.* commands', async () => {
     0,
   );
   assert.equal(await dispatch({ cmd: 'mcp.sync', args: {} }, send, deps), 0);
+});
+
+test('handleInject stores cookies and upserts account in store', async () => {
+  const setCookies = [];
+  const fakeSession = {
+    cookies: {
+      set: async (c) => setCookies.push(c),
+      flushStore: async () => {},
+    },
+  };
+  let upserted;
+  const store = {
+    upsertAccount: (acc) => {
+      upserted = acc;
+    },
+  };
+  const { sent, send } = collector();
+  const exitCode = await handleInject(
+    {
+      provider: 'openai',
+      email: 'test@example.com',
+      cookies: 'session-token=secret123; foo=bar',
+    },
+    send,
+    {
+      store,
+      providers: {
+        getProvider: (name) => ({ name, displayName: 'ChatGPT', baseUrl: 'https://chatgpt.com' }),
+      },
+      session: { fromPartition: () => fakeSession },
+    },
+  );
+
+  assert.equal(exitCode, 0);
+  assert.equal(upserted.id, 'openai:test@example.com');
+  assert.equal(upserted.email, 'test@example.com');
+  assert.equal(setCookies.length, 2);
+  assert.equal(sent[0].type, 'stdout');
 });

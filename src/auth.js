@@ -16,6 +16,11 @@ async function findAuthCookie(ses, prov) {
   const cookies = await ses.cookies.get({ url: prov.baseUrl, name: prov.cookieName });
   if (cookies.length > 0) return cookies[0].value;
 
+  if (prov.baseUrl.includes('google.com')) {
+    const gCookies = await ses.cookies.get({ url: 'https://google.com', name: prov.cookieName });
+    if (gCookies.length > 0) return gCookies[0].value;
+  }
+
   // Try prefix match (e.g. __Secure-next-auth.session-token.0)
   if (prov.cookiePrefix) {
     const allCookies = await ses.cookies.get({ url: prov.baseUrl });
@@ -62,6 +67,9 @@ function openLoginWindow(providerName, accountId) {
         session: ses,
       },
     });
+    win.webContents.setUserAgent(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    );
     configureProviderWebContents(win.webContents);
 
     let resolved = false;
